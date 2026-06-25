@@ -7,6 +7,7 @@ urlpatterns = [
     path('', admin.site.urls),
     path('api/users/', include('users.urls')),
     path('api/lms/', include('lms.urls')),
+    path('', include('users.urls')),
 ]
 
 if settings.DEBUG:
