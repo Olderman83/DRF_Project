@@ -1,0 +1,62 @@
+[
+  {
+    "model": "lms.course",
+    "pk": 1,
+    "fields": {
+      "name": "Python Basics",
+      "preview": null,
+      "description": "Курс по основам программирования на Python"
+    }
+  },
+  {
+    "model": "lms.course",
+    "pk": 2,
+    "fields": {
+      "name": "Django Framework",
+      "preview": null,
+      "description": "Курс по веб-разработке с Django"
+    }
+  },
+  {
+    "model": "lms.course",
+    "pk": 3,
+    "fields": {
+      "name": "React for Beginners",
+      "preview": null,
+      "description": "Курс по React.js для начинающих"
+    }
+  },
+  {
+    "model": "lms.lesson",
+    "pk": 1,
+    "fields": {
+      "course": 1,
+      "name": "Введение в Python",
+      "description": "Основы синтаксиса Python",
+      "preview": null,
+      "video_url": "https://example.com/video1"
+    }
+  },
+  {
+    "model": "lms.lesson",
+    "pk": 2,
+    "fields": {
+      "course": 1,
+      "name": "Переменные и типы данных",
+      "description": "Работа с переменными и типами данных в Python",
+      "preview": null,
+      "video_url": "https://example.com/video2"
+    }
+  },
+  {
+    "model": "lms.lesson",
+    "pk": 3,
+    "fields": {
+      "course": 2,
+      "name": "Введение в Django",
+      "description": "Настройка проекта Django",
+      "preview": null,
+      "video_url": "https://example.com/video3"
+    }
+  }
+]

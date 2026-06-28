@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User
+from .models import User, Payment
 
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'is_staff')
@@ -19,5 +19,13 @@ class UserAdmin(BaseUserAdmin):
     )
     search_fields = ('email',)
     ordering = ('email',)
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ('user', 'payment_date', 'amount', 'payment_method', 'course', 'lesson')
+    list_filter = ('payment_method', 'payment_date')
+    search_fields = ('user__email', 'course__name', 'lesson__name')
+    raw_id_fields = ('user', 'course', 'lesson')
+    date_hierarchy = 'payment_date'
 
 admin.site.register(User, UserAdmin)
