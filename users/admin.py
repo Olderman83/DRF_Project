@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, Payment
+from django.contrib.auth.models import Group
 
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'is_staff')
@@ -20,6 +21,10 @@ class UserAdmin(BaseUserAdmin):
     search_fields = ('email',)
     ordering = ('email',)
 
+    def get_groups(self, obj):
+        return ", ".join([g.name for g in obj.groups.all()])
+    get_groups.short_description = 'Группы'
+
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = ('user', 'payment_date', 'amount', 'payment_method', 'course', 'lesson')
@@ -28,4 +33,9 @@ class PaymentAdmin(admin.ModelAdmin):
     raw_id_fields = ('user', 'course', 'lesson')
     date_hierarchy = 'payment_date'
 
+admin.site.unregister(Group)
+@admin.register(Group)
+class GroupAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    filter_horizontal = ('permissions',)
 admin.site.register(User, UserAdmin)
