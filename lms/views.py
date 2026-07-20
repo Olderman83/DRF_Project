@@ -1,4 +1,4 @@
-from rest_framework import viewsets, generics, permissions
+from rest_framework import viewsets, permissions
 from rest_framework.exceptions import PermissionDenied
 from .models import Course, Lesson
 from .serializers import CourseSerializer, LessonSerializer
@@ -6,8 +6,18 @@ from users.permissions import IsModerator, IsOwner, IsOwnerOrModerator, IsOwnerO
 
 
 class CourseViewSet(viewsets.ModelViewSet):
-    queryset = Course.objects.all()
     serializer_class = CourseSerializer
+
+    def get_queryset(self):
+        """
+        Возвращаем курсы в зависимости от прав пользователя:
+        - Модератор: все курсы
+        - Обычный пользователь: только свои курсы
+        """
+        user = self.request.user
+        if user.groups.filter(name='moderators').exists():
+            return Course.objects.all()
+        return Course.objects.filter(owner=user)
 
     def get_permissions(self):
         """
@@ -37,8 +47,18 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 
 class LessonViewSet(viewsets.ModelViewSet):
-    queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
+
+    def get_queryset(self):
+        """
+        Возвращаем уроки в зависимости от прав пользователя:
+        - Модератор: все уроки
+        - Обычный пользователь: только свои уроки
+        """
+        user = self.request.user
+        if user.groups.filter(name='moderators').exists():
+            return Lesson.objects.all()
+        return Lesson.objects.filter(owner=user)
 
     def get_permissions(self):
         """

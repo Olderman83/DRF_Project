@@ -1,5 +1,4 @@
-from rest_framework import viewsets, filters
-from rest_framework import viewsets, generics, permissions, status
+from rest_framework import viewsets, filters, permissions, status
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import User, Payment
@@ -40,14 +39,6 @@ class UserViewSet(viewsets.ModelViewSet):
             # Для детального просмотра используем расширенный сериализатор
             return UserWithPaymentsSerializer
         return UserSerializer
-
-    def perform_create(self, serializer):
-        """
-        Создание пользователя (регистрация)
-        """
-        user = serializer.save()
-        user.set_password(self.request.data.get('password'))
-        user.save()
 
     def get_queryset(self):
         """

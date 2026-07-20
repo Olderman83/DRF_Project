@@ -1,16 +1,39 @@
-from django.db import models
 from rest_framework import serializers
+from django.db import models
 from .models import User, Payment
 
 
 class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+    password_confirm = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'city', 'avatar', 'date_joined']
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'city', 'avatar', 'date_joined', 'password',
+                  'password_confirm']
         read_only_fields = ['id', 'date_joined']
-        extra_kwargs = {
-            'password': {'write_only': True}
-        }
+
+    def validate(self, data):
+        """
+        Проверка совпадения паролей
+        """
+        if data.get('password') != data.get('password_confirm'):
+            raise serializers.ValidationError({"password_confirm": "Пароли не совпадают"})
+        return data
+
+    def create(self, validated_data):
+        """
+        Создание пользователя с хешированием пароля
+        """
+        # Удаляем password_confirm из данных
+        validated_data.pop('password_confirm')
+        # Получаем пароль
+        password = validated_data.pop('password')
+        # Создаем пользователя
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
 
 
 class PaymentSerializer(serializers.ModelSerializer):
