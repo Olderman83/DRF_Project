@@ -1,11 +1,13 @@
 from rest_framework import permissions
 
+
 class IsModerator(permissions.BasePermission):
     """
     Проверяет, является ли пользователь модератором
     """
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.groups.filter(name='moderators').exists()
+
 
 class IsOwner(permissions.BasePermission):
     """
@@ -15,7 +17,11 @@ class IsOwner(permissions.BasePermission):
         # Проверяем, есть ли у объекта поле owner
         if hasattr(obj, 'owner'):
             return obj.owner == request.user
+        # Для модели User проверяем, что это тот же пользователь
+        if hasattr(obj, 'id') and hasattr(request.user, 'id'):
+            return obj.id == request.user.id
         return False
+
 
 class IsOwnerOrModerator(permissions.BasePermission):
     """
@@ -27,6 +33,7 @@ class IsOwnerOrModerator(permissions.BasePermission):
         if hasattr(obj, 'owner'):
             return obj.owner == request.user
         return False
+
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
