@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class Course(models.Model):
@@ -14,6 +15,18 @@ class Course(models.Model):
         null=True,
         blank=True
     )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата создания',
+        null=True,  # Временно
+        blank=True
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Дата обновления',
+        null=True,  # Временно
+        blank=True
+    )
 
     def __str__(self):
         return self.name
@@ -24,7 +37,12 @@ class Course(models.Model):
 
 
 class Lesson(models.Model):
-    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='lessons', verbose_name='Курс')
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name='lessons',
+        verbose_name='Курс'
+    )
     name = models.CharField(max_length=200, verbose_name='Название')
     description = models.TextField(verbose_name='Описание')
     preview = models.ImageField(upload_to='lessons/', null=True, blank=True, verbose_name='Превью')
@@ -35,6 +53,18 @@ class Lesson(models.Model):
         related_name='lessons',
         verbose_name='Владелец',
         null=True,
+        blank=True
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата создания',
+        null=True,  # Временно
+        blank=True
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Дата обновления',
+        null=True,  # Временно
         blank=True
     )
 

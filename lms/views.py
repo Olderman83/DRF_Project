@@ -2,55 +2,27 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from datetime import timedelta
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import Course, Lesson, Subscription
 from .serializers import CourseSerializer, LessonSerializer, SubscriptionSerializer
 from .paginators import CoursePaginator, LessonPaginator
 from users.permissions import IsModerator, IsOwner, IsOwnerOrModerator
+from users.tasks import send_course_update_notification
 
 
 class CourseViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet для управления курсами.
-
-    Доступные действия:
-    - list: Просмотр списка курсов
-    - retrieve: Просмотр конкретного курса
-    - create: Создание нового курса (только для обычных пользователей)
-    - update: Полное обновление курса (владелец или модератор)
-    - partial_update: Частичное обновление курса (владелец или модератор)
-    - destroy: Удаление курса (только владелец)
-    """
     serializer_class = CourseSerializer
     pagination_class = CoursePaginator
 
     def get_queryset(self):
-        """Фильтрация курсов в зависимости от прав пользователя."""
         user = self.request.user
         if user.groups.filter(name='moderators').exists():
             return Course.objects.all()
         return Course.objects.filter(owner=user)
 
-    @swagger_auto_schema(
-        operation_description="Получить список всех курсов",
-        responses={200: CourseSerializer(many=True)}
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Создать новый курс",
-        request_body=CourseSerializer,
-        responses={
-            201: CourseSerializer(),
-            400: "Ошибка валидации",
-            403: "Доступ запрещен (модераторы не могут создавать курсы)"
-        }
-    )
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             permission_classes = [permissions.IsAuthenticated]
@@ -67,35 +39,43 @@ class CourseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def perform_update(self, serializer):
+        """
+        При обновлении курса отправляем уведомления подписанным пользователям
+        """
+        course = self.get_object()
+        updated_course = serializer.save()
+
+        # Проверяем, что курс не обновлялся более 4 часов
+        if course.updated_at:
+            time_since_update = timezone.now() - course.updated_at
+            if time_since_update < timedelta(hours=4):
+                # Если обновление было менее 4 часов назад, не отправляем уведомление
+                return
+
+        # Получаем email всех подписанных пользователей
+        subscribers = Subscription.objects.filter(course=course).select_related('user')
+        subscriber_emails = [sub.user.email for sub in subscribers if sub.user.email]
+
+        if subscriber_emails:
+            # Отправляем задачу на отправку уведомлений асинхронно
+            send_course_update_notification.delay(
+                course_id=course.id,
+                course_name=course.name,
+                user_emails=subscriber_emails
+            )
+
 
 class LessonViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet для управления уроками.
-
-    Доступные действия аналогичны CourseViewSet.
-    """
     serializer_class = LessonSerializer
     pagination_class = LessonPaginator
 
     def get_queryset(self):
-        """Фильтрация уроков в зависимости от прав пользователя."""
         user = self.request.user
         if user.groups.filter(name='moderators').exists():
             return Lesson.objects.all()
         return Lesson.objects.filter(owner=user)
 
-    @swagger_auto_schema(
-        operation_description="Создать новый урок",
-        request_body=LessonSerializer,
-        responses={
-            201: LessonSerializer(),
-            400: "Ошибка валидации (проверка ссылки на YouTube)",
-            403: "Доступ запрещен"
-        }
-    )
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             permission_classes = [permissions.IsAuthenticated]
@@ -112,13 +92,35 @@ class LessonViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def perform_update(self, serializer):
+        """
+        При обновлении урока проверяем, нужно ли отправлять уведомление о курсе
+        """
+        lesson = self.get_object()
+        updated_lesson = serializer.save()
+
+        # Проверяем, не обновлялся ли курс в течение последних 4 часов
+        course = lesson.course
+        if course.updated_at:
+            time_since_update = timezone.now() - course.updated_at
+            if time_since_update < timedelta(hours=4):
+                # Если курс обновлялся менее 4 часов назад, не отправляем уведомление
+                return
+
+        # Получаем email всех подписанных пользователей
+        subscribers = Subscription.objects.filter(course=course).select_related('user')
+        subscriber_emails = [sub.user.email for sub in subscribers if sub.user.email]
+
+        if subscriber_emails:
+            # Отправляем задачу на отправку уведомлений асинхронно
+            send_course_update_notification.delay(
+                course_id=course.id,
+                course_name=course.name,
+                user_emails=subscriber_emails
+            )
+
 
 class SubscriptionView(APIView):
-    """
-    Эндпоинт для управления подписками на обновления курса.
-
-    POST: Создание или удаление подписки на курс.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
@@ -147,9 +149,6 @@ class SubscriptionView(APIView):
         }
     )
     def post(self, request):
-        """
-        Создание или удаление подписки.
-        """
         user = request.user
         course_id = request.data.get('course_id')
 
