@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
+from django.db import transaction
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import Course, Lesson, Subscription
@@ -43,12 +44,18 @@ class CourseViewSet(viewsets.ModelViewSet):
         """
         При обновлении курса отправляем уведомления подписанным пользователям
         """
+        # Получаем текущий объект до сохранения
         course = self.get_object()
+        # Сохраняем время последнего обновления ДО сохранения
+        previous_updated_at = course.updated_at
+
+        # Сохраняем обновленный курс
         updated_course = serializer.save()
 
-        # Проверяем, что курс не обновлялся более 4 часов
-        if course.updated_at:
-            time_since_update = timezone.now() - course.updated_at
+        # Проверяем, было ли обновление более 4 часов назад
+        # Используем previous_updated_at для проверки
+        if previous_updated_at:
+            time_since_update = timezone.now() - previous_updated_at
             if time_since_update < timedelta(hours=4):
                 # Если обновление было менее 4 часов назад, не отправляем уведомление
                 return
@@ -59,14 +66,20 @@ class CourseViewSet(viewsets.ModelViewSet):
 
         if subscriber_emails:
             # Отправляем задачу на отправку уведомлений асинхронно
-            send_course_update_notification.delay(
-                course_id=course.id,
-                course_name=course.name,
-                user_emails=subscriber_emails
+            # Используем transaction.on_commit() для запуска задачи после успешного сохранения
+            transaction.on_commit(
+                lambda: send_course_update_notification.delay(
+                    course_id=course.id,
+                    course_name=course.name,
+                    user_emails=subscriber_emails
+                )
             )
 
 
 class LessonViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet для управления уроками
+    """
     serializer_class = LessonSerializer
     pagination_class = LessonPaginator
 
@@ -92,84 +105,62 @@ class LessonViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-    def perform_update(self, serializer):
-        """
-        При обновлении урока проверяем, нужно ли отправлять уведомление о курсе
-        """
-        lesson = self.get_object()
-        updated_lesson = serializer.save()
-
-        # Проверяем, не обновлялся ли курс в течение последних 4 часов
-        course = lesson.course
-        if course.updated_at:
-            time_since_update = timezone.now() - course.updated_at
-            if time_since_update < timedelta(hours=4):
-                # Если курс обновлялся менее 4 часов назад, не отправляем уведомление
-                return
-
-        # Получаем email всех подписанных пользователей
-        subscribers = Subscription.objects.filter(course=course).select_related('user')
-        subscriber_emails = [sub.user.email for sub in subscribers if sub.user.email]
-
-        if subscriber_emails:
-            # Отправляем задачу на отправку уведомлений асинхронно
-            send_course_update_notification.delay(
-                course_id=course.id,
-                course_name=course.name,
-                user_emails=subscriber_emails
-            )
-
 
 class SubscriptionView(APIView):
+    """
+    View для управления подписками на курсы
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Создать или удалить подписку на курс",
+        operation_description="Подписка/отписка от курса",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['course_id'],
             properties={
-                'course_id': openapi.Schema(
-                    type=openapi.TYPE_INTEGER,
-                    description='ID курса, на который нужно подписаться'
-                ),
-            }
+                'course_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID курса'),
+            },
+            required=['course_id']
         ),
         responses={
-            200: openapi.Response(
-                description="Успешный ответ",
-                examples={
-                    "application/json": {
-                        "message": "Подписка добавлена"
-                    }
+            200: openapi.Response('Успешная операция', schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
                 }
-            ),
-            400: "Не указан course_id или курс не существует",
-            401: "Неавторизованный доступ"
+            )),
+            400: 'Ошибка валидации',
+            404: 'Курс не найден',
         }
     )
     def post(self, request):
+        """
+        Создание или удаление подписки на курс
+        """
         user = request.user
         course_id = request.data.get('course_id')
 
         if not course_id:
             return Response(
-                {"error": "Необходимо указать course_id"},
+                {'error': 'Необходимо указать course_id'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         course = get_object_or_404(Course, id=course_id)
 
-        subscription = Subscription.objects.filter(
-            user=user,
-            course=course
-        )
+        # Проверяем, существует ли подписка
+        subscription = Subscription.objects.filter(user=user, course=course)
 
         if subscription.exists():
+            # Если подписка существует - удаляем её (отписка)
             subscription.delete()
-            message = "Подписка удалена"
+            return Response(
+                {'message': 'Подписка удалена'},
+                status=status.HTTP_200_OK
+            )
         else:
+            # Если подписки нет - создаем её
             Subscription.objects.create(user=user, course=course)
-            message = "Подписка добавлена"
-
-        return Response({"message": message}, status=status.HTTP_200_OK)
+            return Response(
+                {'message': 'Подписка добавлена'},
+                status=status.HTTP_200_OK
+            )
