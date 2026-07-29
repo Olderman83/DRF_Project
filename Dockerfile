@@ -24,6 +24,3 @@ RUN mkdir -p /app/static /app/media
 
 # Открытие порта
 EXPOSE 8000
-
-# Команда запуска (переопределяется в docker-compose)
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
