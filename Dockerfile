@@ -1,26 +1,16 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Установка системных зависимостей
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Установка рабочей директории
 WORKDIR /app
 
-# Копирование файлов зависимостей
-COPY requirements.txt .
+RUN apt-get update \\
+  && apt-get install -y gcc libpg-dev \\
+  && apt-get clean \\
+  && rm -rf /var/lib/apt/lists/\*
 
-# Установка Python зависимостей
+COPY requirements.txt
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование кода проекта
 COPY . .
 
-# Создание директорий для статики и медиа
-RUN mkdir -p /app/static /app/media
-
-# Открытие порта
 EXPOSE 8000
