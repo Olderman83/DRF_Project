@@ -146,3 +146,11 @@ CELERY_BEAT_SCHEDULE = {
         'args': (30,),  # Блокировать пользователей, не заходивших более 30 дней
     },
 }
+
+if 'test' in sys.argv:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR/ 'test_db/sqlite3',
+        }
+    }
