@@ -1,3 +1,4 @@
+version: '3.8'
 
 services:
   # PostgreSQL база данных
@@ -87,6 +88,22 @@ services:
       - lms_network
     restart: unless-stopped
 
+  nginx:
+    image: nginx:alpine
+    container_name: lms_nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/app/static:ro
+      - media_volume:/app/media:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+    networks:
+      - lms_network
+    restart: unless-stopped
+
   # Celery Worker
   celery:
     build:
@@ -162,6 +179,149 @@ services:
       - lms_network
     restart: unless-stopped
 
+  # Этап 1: Тесты
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lms_tests
+    command: >
+      sh -c "
+        python manage.py wait_for_db &&
+        python manage.py test
+      "
+    environment:
+      - DEBUG=${DEBUG}
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - DATABASE_USER=${DATABASE_USER}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_HOST=${DATABASE_HOST}
+      - DATABASE_PORT=${DATABASE_PORT}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PUBLIC_KEY=${STRIPE_PUBLIC_KEY}
+      - SITE_URL=${SITE_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lms_network
+    profiles:
+      - ci
+
+  # Этап 2: Линтинг
+  lint:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lms_lint
+    command: >
+      sh -c "
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics &&
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics &&
+        black --check . &&
+        isort --check-only --profile black .
+      "
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=${DEBUG}
+    depends_on:
+      - tests
+    networks:
+      - lms_network
+    profiles:
+      - ci
+
+  # Этап 3: Сборка
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lms_build
+    command: >
+      sh -c "
+        python manage.py collectstatic --noinput &&
+        python manage.py check --deploy
+      "
+    volumes:
+      - .:/app
+      - static_volume:/app/static
+      - media_volume:/app/media
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - DATABASE_USER=${DATABASE_USER}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_HOST=${DATABASE_HOST}
+      - DATABASE_PORT=${DATABASE_PORT}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PUBLIC_KEY=${STRIPE_PUBLIC_KEY}
+      - SITE_URL=${SITE_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+    depends_on:
+      - lint
+    networks:
+      - lms_network
+    profiles:
+      - ci
+
+  # Этап 4: Деплой
+  deploy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lms_deploy
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        python manage.py loaddata users/fixtures/groups.json &&
+        python manage.py loaddata fixtures/users.json &&
+        python manage.py loaddata fixtures/courses_lessons.json &&
+        python manage.py loaddata fixtures/payments.json &&
+        python manage.py create_groups &&
+        echo 'Deployment completed successfully!'
+      "
+    volumes:
+      - .:/app
+      - static_volume:/app/static
+      - media_volume:/app/media
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - DATABASE_USER=${DATABASE_USER}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_HOST=${DATABASE_HOST}
+      - DATABASE_PORT=${DATABASE_PORT}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PUBLIC_KEY=${STRIPE_PUBLIC_KEY}
+      - SITE_URL=${SITE_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+    depends_on:
+      - build
+    networks:
+      - lms_network
+    profiles:
+      - ci
+
 # Сети
 networks:
   lms_network:
@@ -173,3 +333,4 @@ volumes:
   redis_data:
   static_volume:
   media_volume:
+
